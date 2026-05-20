@@ -2,9 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import businesses, { buildPrompt } from "@/config/businesses";
 
 export async function POST(req: NextRequest) {
-  const { message, bizId, context } = await req.json();
+  const { message, bizId, context, history = [] } = await req.json();
 
-  // Use bizId if provided, else fall back to raw context
   let systemPrompt = context;
   if (bizId) {
     const biz = businesses.find(b => b.id === bizId);
@@ -13,10 +12,15 @@ export async function POST(req: NextRequest) {
 
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) {
-    return NextResponse.json({ reply: "API key not configured. Add GROQ_API_KEY to your .env.local file." });
+    return NextResponse.json({ reply: "API key not configured." });
   }
 
   try {
+    const messages = [
+      ...history,
+      { role: "user", content: message },
+    ];
+
     const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -27,7 +31,7 @@ export async function POST(req: NextRequest) {
         model: "llama-3.3-70b-versatile",
         messages: [
           { role: "system", content: systemPrompt },
-          { role: "user", content: message },
+          ...messages,
         ],
         max_tokens: 150,
         temperature: 0.7,

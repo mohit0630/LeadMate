@@ -15,7 +15,10 @@ export default function Home() {
   ]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [history, setHistory] = useState<{role: string; content: string}[]>([]);
   const [submitted, setSubmitted] = useState(false);
+  const [stats, setStats] = useState({ total: 0, autoResolved: 0, flagged: 0 });
+  const [recentMsgs, setRecentMsgs] = useState<{name: string; text: string; auto: boolean}[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatBoxRef = useRef<HTMLDivElement>(null);
   const messageCount = useRef(1);
@@ -31,6 +34,9 @@ export default function Home() {
   const switchBiz = (biz: typeof businesses[0]) => {
     setActiveBiz(biz);
     setMessages([{ role: "bot", text: `Hi! Welcome to ${biz.name} 👋 How can I help you today?`, time: getTime() }]);
+    setHistory([]);
+    setStats({ total: 0, autoResolved: 0, flagged: 0 });
+    setRecentMsgs([]);
     setInput("");
   };
 
@@ -39,17 +45,25 @@ export default function Home() {
     const userMsg = input.trim();
     setInput("");
     setMessages(prev => [...prev, { role: "user", text: userMsg, time: getTime() }]);
+    const newHistory = [...history, { role: "user", content: userMsg }];
+    setHistory(newHistory);
     setLoading(true);
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: userMsg, bizId: activeBiz.id }),
+        body: JSON.stringify({ message: userMsg, bizId: activeBiz.id, history: newHistory }),
       });
       const data = await res.json();
-      setMessages(prev => [...prev, { role: "bot", text: data.reply, time: getTime() }]);
+      const reply = data.reply;
+      const isFlagged = reply.includes("connect you with our team");
+      setMessages(prev => [...prev, { role: "bot", text: reply, time: getTime() }]);
+      setHistory(prev => [...prev, { role: "assistant", content: reply }]);
+      setStats(prev => ({ total: prev.total + 1, autoResolved: prev.autoResolved + (isFlagged ? 0 : 1), flagged: prev.flagged + (isFlagged ? 1 : 0) }));
+      setRecentMsgs(prev => [{ name: "Visitor", text: userMsg, auto: !isFlagged }, ...prev].slice(0, 5));
     } catch {
       setMessages(prev => [...prev, { role: "bot", text: "Let me connect you with our team!", time: getTime() }]);
+      setStats(prev => ({ ...prev, total: prev.total + 1, flagged: prev.flagged + 1 }));
     }
     setLoading(false);
   };
@@ -153,6 +167,82 @@ export default function Home() {
           </div>
         </div>
         <p style={{ textAlign: "center", fontSize: 12, color: "var(--muted2)", marginTop: 16 }}>This is a live AI — responses are real, not scripted.</p>
+
+        {/* LIVE DASHBOARD */}
+        <div style={{ maxWidth: 900, margin: "32px auto 0", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+          {/* Stats */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <div style={{ fontSize: 11, color: "var(--green)", letterSpacing: "0.1em", textTransform: "uppercase" }}>Live Dashboard</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+              <div style={{ background: "var(--surface)", border: "0.5px solid var(--border)", borderRadius: 10, padding: "14px 12px", textAlign: "center" }}>
+                <div style={{ fontSize: 28, fontFamily: "'Bebas Neue', sans-serif", color: "var(--green)", letterSpacing: 1 }}>{stats.total}</div>
+                <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 2 }}>Handled</div>
+              </div>
+              <div style={{ background: "var(--surface)", border: "0.5px solid var(--border)", borderRadius: 10, padding: "14px 12px", textAlign: "center" }}>
+                <div style={{ fontSize: 28, fontFamily: "'Bebas Neue', sans-serif", color: "var(--green)", letterSpacing: 1 }}>{stats.total > 0 ? Math.round((stats.autoResolved / stats.total) * 100) : 0}%</div>
+                <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 2 }}>Auto-resolved</div>
+              </div>
+              <div style={{ background: "var(--surface)", border: "0.5px solid var(--border)", borderRadius: 10, padding: "14px 12px", textAlign: "center" }}>
+                <div style={{ fontSize: 28, fontFamily: "'Bebas Neue', sans-serif", color: stats.flagged > 0 ? "orange" : "var(--green)", letterSpacing: 1 }}>{stats.flagged}</div>
+                <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 2 }}>Needs attention</div>
+              </div>
+            </div>
+
+            {/* Recent messages */}
+            <div style={{ background: "var(--surface)", border: "0.5px solid var(--border)", borderRadius: 10, padding: 16, flex: 1 }}>
+              <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 12 }}>Recent conversations</div>
+              {recentMsgs.length === 0 ? (
+                <div style={{ fontSize: 12, color: "var(--muted2)", textAlign: "center", padding: "20px 0" }}>Send a message to see it here</div>
+              ) : (
+                recentMsgs.map((msg, i) => (
+                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: i < recentMsgs.length - 1 ? "0.5px solid var(--border)" : "none" }}>
+                    <div style={{ width: 28, height: 28, borderRadius: 7, background: "var(--surface2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: "var(--muted)", flexShrink: 0 }}>V</div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 2 }}>Visitor</div>
+                      <div style={{ fontSize: 12, color: "var(--text)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{msg.text}</div>
+                    </div>
+                    <div style={{ fontSize: 10, padding: "2px 8px", borderRadius: 10, background: msg.auto ? "rgba(37,211,102,0.12)" : "rgba(255,165,0,0.12)", color: msg.auto ? "var(--green)" : "orange", flexShrink: 0 }}>
+                      {msg.auto ? "Auto" : "Flag"}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          {/* Agent info panel */}
+          <div style={{ background: "var(--surface)", border: "0.5px solid var(--border)", borderRadius: 10, padding: 20, display: "flex", flexDirection: "column", gap: 14 }}>
+            <div style={{ fontSize: 11, color: "var(--muted)" }}>Active agent</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <div style={{ width: 40, height: 40, borderRadius: 10, background: `${activeBiz.color}20`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>{activeBiz.emoji}</div>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 500 }}>{activeBiz.name}</div>
+                <div style={{ fontSize: 11, color: "var(--green)" }}>● Online · Responding</div>
+              </div>
+            </div>
+            <div style={{ borderTop: "0.5px solid var(--border)", paddingTop: 14, display: "flex", flexDirection: "column", gap: 10 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
+                <span style={{ color: "var(--muted)" }}>Business type</span>
+                <span>{activeBiz.type}</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
+                <span style={{ color: "var(--muted)" }}>Location</span>
+                <span>{activeBiz.location}</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
+                <span style={{ color: "var(--muted)" }}>Hours</span>
+                <span style={{ textAlign: "right", maxWidth: 140 }}>{activeBiz.hours}</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
+                <span style={{ color: "var(--muted)" }}>Avg response</span>
+                <span style={{ color: "var(--green)" }}>&lt;2s</span>
+              </div>
+            </div>
+            <div style={{ marginTop: "auto", background: "var(--green-glow)", border: "0.5px solid rgba(37,211,102,0.2)", borderRadius: 8, padding: "10px 14px", fontSize: 12, color: "var(--muted)", lineHeight: 1.6 }}>
+              💡 This dashboard updates live as customers chat. Your real dashboard will show all-time stats.
+            </div>
+          </div>
+        </div>
       </section>
 
       {/* HOW IT WORKS */}
