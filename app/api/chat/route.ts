@@ -1,11 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
+import businesses, { buildPrompt } from "@/config/businesses";
 
 export async function POST(req: NextRequest) {
-  const { message, context } = await req.json();
+  const { message, bizId, context } = await req.json();
+
+  // Use bizId if provided, else fall back to raw context
+  let systemPrompt = context;
+  if (bizId) {
+    const biz = businesses.find(b => b.id === bizId);
+    if (biz) systemPrompt = buildPrompt(biz);
+  }
 
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) {
-    return NextResponse.json({ reply: "API key not configured. Add GROQ_API_KEY to your environment." });
+    return NextResponse.json({ reply: "API key not configured. Add GROQ_API_KEY to your .env.local file." });
   }
 
   try {
@@ -18,7 +26,7 @@ export async function POST(req: NextRequest) {
       body: JSON.stringify({
         model: "llama-3.3-70b-versatile",
         messages: [
-          { role: "system", content: context },
+          { role: "system", content: systemPrompt },
           { role: "user", content: message },
         ],
         max_tokens: 150,
